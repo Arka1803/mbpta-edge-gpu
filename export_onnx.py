@@ -1,5 +1,12 @@
 import argparse
 import os
+
+# Set TORCH_HOME before importing torchvision so that all weight downloads
+# and cache files land in ../DNN_models/ regardless of system defaults.
+_DNN_MODELS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'DNN_models'))
+os.makedirs(_DNN_MODELS_DIR, exist_ok=True)
+os.environ['TORCH_HOME'] = _DNN_MODELS_DIR
+
 import torch
 import torch.nn as nn
 import torchvision.models as models
@@ -33,38 +40,58 @@ class LeNet5(nn.Module):
         x = self.classifier(x)
         return x
 
+# Mapping of model name -> (constructor, weights enum)
+_MODEL_REGISTRY = {
+    'alexnet':   (models.alexnet,    models.AlexNet_Weights.DEFAULT),
+    'vgg16':     (models.vgg16,      models.VGG16_Weights.DEFAULT),
+    'googlenet': (models.googlenet,  models.GoogLeNet_Weights.DEFAULT),
+    'resnet18':  (models.resnet18,   models.ResNet18_Weights.DEFAULT),
+    'resnet50':  (models.resnet50,   models.ResNet50_Weights.DEFAULT),
+}
+
+def download_weights(model_names: list):
+    """
+    Explicitly pre-downloads all pretrained weights for the given model names
+    before any ONNX conversion begins. LeNet-5 has no pretrained weights.
+    """
+    print("--- Pre-downloading pretrained weights ---")
+    for name in model_names:
+        if name == 'lenet5':
+            print(f"  [{name}] No pretrained weights (custom architecture) — skipping.")
+            continue
+        if name not in _MODEL_REGISTRY:
+            print(f"  [{name}] Unknown model — skipping download.")
+            continue
+        constructor, weights_enum = _MODEL_REGISTRY[name]
+        print(f"  [{name}] Downloading / verifying weights -> {_DNN_MODELS_DIR} ...")
+        try:
+            constructor(weights=weights_enum)   # triggers download if not cached
+            print(f"  [{name}] OK")
+        except Exception as e:
+            print(f"  [{name}] WARNING: download failed: {e}")
+    print("--- Weights ready ---\n")
+
 def load_model(agent_name: str, device: torch.device) -> nn.Module:
-    """Loads the specified pre-trained model."""
+    """Loads the specified pre-trained model (weights already cached)."""
     name = agent_name.lower()
-    
+
     if name == 'lenet5':
         model = LeNet5()
-    elif name == 'alexnet':
-        model = models.alexnet(weights=models.AlexNet_Weights.DEFAULT)
-    elif name == 'vgg16':
-        model = models.vgg16(weights=models.VGG16_Weights.DEFAULT)
-    elif name == 'googlenet':
-        model = models.googlenet(weights=models.GoogLeNet_Weights.DEFAULT)
-    elif name == 'resnet18':
-        model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
-    elif name == 'resnet50':
-        model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+    elif name in _MODEL_REGISTRY:
+        constructor, weights_enum = _MODEL_REGISTRY[name]
+        model = constructor(weights=weights_enum)
     else:
         raise ValueError(f"Unsupported model: {agent_name}")
-        
+
     model.to(device)
     model.eval()
     return model
 
 def main():
-    dnn_models_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'DNN_models'))
-    os.makedirs(dnn_models_dir, exist_ok=True)
-    os.environ['TORCH_HOME'] = dnn_models_dir
-
     parser = argparse.ArgumentParser(description="Export PyTorch model to ONNX")
-    parser.add_argument("--agent", type=str, required=True, 
+    parser.add_argument("--agent", type=str, required=True,
                         help="Specific model to run (e.g., 'resnet18', 'vgg16', 'lenet5') or 'all'.")
-    parser.add_argument("--output_dir", type=str, default=dnn_models_dir, help="Directory to save ONNX models")
+    parser.add_argument("--output_dir", type=str, default=_DNN_MODELS_DIR, help="Directory to save ONNX models")
     args = parser.parse_args()
     
     os.makedirs(args.output_dir, exist_ok=True)
@@ -78,6 +105,9 @@ def main():
         
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dummy_input = torch.randn(1, 3, 224, 224, device=device)
+
+    # Step 1: Download / verify all pretrained weights before any ONNX work
+    download_weights(models_to_run)
 
     for model_name in models_to_run:
         print(f"Exporting {model_name} to ONNX...")
