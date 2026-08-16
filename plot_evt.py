@@ -78,11 +78,29 @@ def plot_evt(csv_path: str, block_size: int = 50, output_path: str = None):
     else:
         plt.show()
 
+import glob
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Plot EVT (PDF/CDF) using Block Maxima.")
-    parser.add_argument("--input", type=str, required=True, help="Path to raw CSV file.")
+    parser.add_argument("--input", type=str, help="Path to raw CSV file.")
+    parser.add_argument("--all", action="store_true", help="Plot for all *_raw.csv files in results/csv_files/ and save to results/plots_png/.")
     parser.add_argument("--block_size", type=int, default=50, help="Block size for maxima (default: 50).")
     parser.add_argument("--output", type=str, default=None, help="Path to save the plot image (optional).")
     args = parser.parse_args()
     
-    plot_evt(args.input, args.block_size, args.output)
+    if args.all:
+        csv_files = glob.glob(os.path.join("results", "csv_files", "*_raw.csv"))
+        if not csv_files:
+            print("No CSV files found in results/csv_files/")
+        
+        os.makedirs(os.path.join("results", "plots_png"), exist_ok=True)
+        for f in csv_files:
+            print(f"\n{'='*50}\nPlotting {f}\n{'='*50}")
+            base_name = os.path.basename(f).replace("_raw.csv", "_evt.png")
+            out_path = os.path.join("results", "plots_png", base_name)
+            plot_evt(f, args.block_size, out_path)
+    elif args.input:
+        plot_evt(args.input, args.block_size, args.output)
+    else:
+        parser.print_help()
+        print("\nError: You must specify either --input or --all.")

@@ -73,10 +73,25 @@ def run_crps_test(csv_path: str, block_size: int = 50, delta_n: int = 50, thresh
     print(f"Test finished without reaching convergence. Lowest CRPS not below {threshold} or ran out of data.")
     return None, False, current_n
 
+import os
+import glob
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="CRPS Test for EVT Stability.")
-    parser.add_argument("--input", type=str, required=True, help="Path to raw CSV file.")
+    parser.add_argument("--input", type=str, help="Path to raw CSV file.")
+    parser.add_argument("--all", action="store_true", help="Run test on all *_raw.csv files in results/csv_files/.")
     parser.add_argument("--threshold", type=float, default=0.001, help="CRPS Threshold (default: 0.001).")
     args = parser.parse_args()
     
-    run_crps_test(args.input, threshold=args.threshold)
+    if args.all:
+        csv_files = glob.glob(os.path.join("results", "csv_files", "*_raw.csv"))
+        if not csv_files:
+            print("No CSV files found in results/csv_files/")
+        for f in csv_files:
+            print(f"\n{'='*50}\nTesting {f}\n{'='*50}")
+            run_crps_test(f, threshold=args.threshold)
+    elif args.input:
+        run_crps_test(args.input, threshold=args.threshold)
+    else:
+        parser.print_help()
+        print("\nError: You must specify either --input or --all.")

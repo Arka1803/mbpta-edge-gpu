@@ -46,10 +46,25 @@ def run_ks_test(csv_path: str, threshold: float = 0.05):
     print("")
     run_ks_test_for_m(data, 100, threshold)
 
+import os
+import glob
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="KS Test for identical distribution property.")
-    parser.add_argument("--input", type=str, required=True, help="Path to raw CSV file.")
+    parser.add_argument("--input", type=str, help="Path to raw CSV file.")
+    parser.add_argument("--all", action="store_true", help="Run test on all *_raw.csv files in results/csv_files/.")
     parser.add_argument("--threshold", type=float, default=0.05, help="P-value threshold (default: 0.05).")
     args = parser.parse_args()
     
-    run_ks_test(args.input, args.threshold)
+    if args.all:
+        csv_files = glob.glob(os.path.join("results", "csv_files", "*_raw.csv"))
+        if not csv_files:
+            print("No CSV files found in results/csv_files/")
+        for f in csv_files:
+            print(f"\n{'='*50}\nTesting {f}\n{'='*50}")
+            run_ks_test(f, args.threshold)
+    elif args.input:
+        run_ks_test(args.input, args.threshold)
+    else:
+        parser.print_help()
+        print("\nError: You must specify either --input or --all.")
