@@ -3,51 +3,48 @@ import pandas as pd
 import numpy as np
 from scipy import stats
 
+def run_ks_test_for_m(data, m, threshold):
+    n = len(data)
+    if n < 2 * m:
+        print(f"Not enough data points ({n}) to sample two blocks of {m}.")
+        return None, False
+
+    idx1 = np.random.randint(0, n - m + 1)
+    sample1 = data[idx1 : idx1 + m]
+    
+    idx2 = np.random.randint(0, n - m + 1)
+    sample2 = data[idx2 : idx2 + m]
+    
+    statistic, p_value = stats.ks_2samp(sample1, sample2)
+    passed = p_value > threshold
+    
+    print(f"--- KS Test for m={m} ---")
+    print(f"Sample 1 idx: {idx1} to {idx1+m-1}")
+    print(f"Sample 2 idx: {idx2} to {idx2+m-1}")
+    print(f"KS Statistic: {statistic:.4f}")
+    print(f"P-value: {p_value:.4f}")
+    if passed:
+        print("Result: PASS (Identical distribution property verified)")
+    else:
+        print("Result: FAIL (Identical distribution property not verified)")
+    return p_value, passed
+
 def run_ks_test(csv_path: str, threshold: float = 0.05):
     """
     Reads execution times from a CSV and performs a two-sample KS test
-    on two randomly selected consecutive blocks of sizes 50 and 100.
+    on two randomly selected blocks of size m=50, and again for m=100.
     """
     df = pd.read_csv(csv_path)
     if 'inference_time_ms' not in df.columns:
         raise ValueError("CSV must contain an 'inference_time_ms' column.")
         
     data = df['inference_time_ms'].values
-    n = len(data)
-    
-    m1 = 50
-    m2 = 100
-    
-    if n < m1 + m2:
-        raise ValueError(f"Not enough data points ({n}) to sample blocks of {m1} and {m2}.")
-
-    # Pick a random start index for the first block (m=50)
-    idx1 = np.random.randint(0, n - m1 + 1)
-    sample1 = data[idx1 : idx1 + m1]
-    
-    # Pick a random start index for the second block (m=100)
-    # Ensure it doesn't overlap completely, or just randomly pick anywhere
-    idx2 = np.random.randint(0, n - m2 + 1)
-    sample2 = data[idx2 : idx2 + m2]
-    
-    # Perform two-sample KS test
-    statistic, p_value = stats.ks_2samp(sample1, sample2)
-    
-    passed = p_value > threshold
-    
-    print(f"--- Kolmogorov-Smirnov (KS) Test ---")
     print(f"Data file: {csv_path}")
-    print(f"Sample 1 size: {m1} (idx {idx1} to {idx1+m1-1})")
-    print(f"Sample 2 size: {m2} (idx {idx2} to {idx2+m2-1})")
-    print(f"KS Statistic: {statistic:.4f}")
-    print(f"P-value: {p_value:.4f}")
     print(f"Threshold: {threshold}")
-    if passed:
-        print("Result: PASS (Identical distribution property verified)")
-    else:
-        print("Result: FAIL (Identical distribution property not verified)")
-        
-    return p_value, passed
+    
+    run_ks_test_for_m(data, 50, threshold)
+    print("")
+    run_ks_test_for_m(data, 100, threshold)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="KS Test for identical distribution property.")

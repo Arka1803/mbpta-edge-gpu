@@ -1,13 +1,12 @@
 # DNN GPU Inference Profiler
 
-This tool profiles the inference execution time of various Deep Neural Networks (DNNs) on an edge GPU and fits the results into a Gumbel probabilistic distribution for Worst-Case Execution Time (WCET) analysis.
+This tool profiles the inference execution time of various Deep Neural Networks (DNNs) on an edge GPU for Worst-Case Execution Time (WCET) analysis. It has been updated to use highly accurate TensorRT profiling via `trtexec` wrapper written in C.
 
 ## Features
-- **Accurate Profiling**: Uses `torch.cuda.Event(enable_timing=True)` and `torch.cuda.synchronize()` to capture true GPU execution times, completely isolated from asynchronous launch overheads.
-- **ImageNet Standard Preprocessing**: Automatically resizes (224x224), center-crops, and normalizes video frames for model ingestion.
-- **Statistical Extreme Value Theory (EVT)**: Applies the Block Maxima method (block size = 50) to execution times and fits them to a Gumbel distribution (right-skewed) to evaluate the pWCET tail.
+- **Accurate Profiling**: Uses TensorRT's native `trtexec` to capture extremely accurate, iteration-by-iteration inference execution times on the device.
+- **ONNX Export**: Provides a utility to export standard PyTorch models to ONNX for ingestion by TensorRT.
 - **Dynamic Model Loading**: Supports standard `torchvision` models seamlessly.
-- **Comprehensive Outputs**: Automatically generates raw timing `.csv` data, rich `.mat` exports, and visual `.png` distribution plots.
+- **Comprehensive Outputs**: Outputs raw timing data in JSON format directly from TensorRT.
 
 ## Directory Structure
 Ensure your workspace resembles the following structure:
@@ -15,48 +14,49 @@ Ensure your workspace resembles the following structure:
 DNN_pWCET/
 ├── DNN_models/        # Pre-trained models cache (auto-downloaded)
 ├── scenes/            # Place your MP4/AVI videos here
-│   ├── day/           # Videos representing the "day" scene
-│   ├── night/         # Videos representing the "night" scene
-│   └── rain/          # Videos representing the "rain" scene
 └── mbpta-edge-gpu/
-    ├── profiler.py        # The main profiling script
+    ├── export_onnx.py     # Exports PyTorch models to ONNX
+    ├── profiler.c         # C wrapper for trtexec profiling
+    ├── Makefile           # Builds the C profiler
     ├── extract_pwcet.py   # Extracts pWCET discrete PMF
     ├── ks_test.py         # Performs the Kolmogorov-Smirnov (KS) Test
     ├── crps_test.py       # Computes Continuous Ranked Probability Score (CRPS)
+    ├── plot_evt.py        # Plots PDF and CDF using EVT block maxima method
     └── results/           # Contains organized outputs
-        ├── csv_files/     # Raw frame-by-frame timing CSV files
-        ├── mat_files/     # MATLAB structured data exports
-        └── plots_png/     # Separate PDF and CDF distribution visual plots
+        └── csv_files/     # Output timing files
 ```
 
 ## How to Run
 
-The script uses a Command-Line Interface (CLI) to specify which model you want to profile.
-
-**1. Profile a Specific Model**
-To profile a specific model (e.g., `resnet18`), run:
+**1. Export Models to ONNX**
+Before profiling, export the desired models to ONNX format.
 ```bash
-python profiler.py --agent resnet18
+python export_onnx.py --agent resnet18
 ```
-Supported models: `lenet5`, `alexnet`, `vgg16`, `googlenet`, `resnet18`, `resnet50`.
+Supported models: `lenet5`, `alexnet`, `vgg16`, `googlenet`, `resnet18`, `resnet50`, or `all`.
 
-**2. Profile All Supported Models**
-To sequentially iterate through and profile every supported model across all your scenes, run:
+**2. Compile the C Profiler**
+Use the provided Makefile to compile the C profiler.
 ```bash
-python profiler.py --agent all
+make
 ```
+
+**3. Profile the Model**
+Run the compiled C program to profile the model using TensorRT `trtexec`. It will automatically build the `.engine` from the ONNX file and export the execution times.
+```bash
+./profiler resnet18 1000
+```
+This will run `resnet18` for `1000` iterations and export the profiling JSON data to `results/csv_files/resnet18_times.json`.
 
 ## Outputs
 
-For every valid `(Model, Scene)` combination (e.g., `resnet18` on `day`), the script generates three files routed to respective subdirectories in `results/`:
-
-1. **Raw Data (`csv_files/*_raw.csv`)**: A CSV file containing the raw, frame-by-frame inference execution times (in milliseconds).
-2. **MATLAB Data (`mat_files/*.mat`)**: A dictionary containing the raw inference times array, the extracted block maxima array, and the fitted Gumbel parameters (`loc` and `scale`).
-3. **Distribution Plots (`plots_png/*_pdf.png` and `plots_png/*_cdf.png`)**: Visual graphs displaying the Probability Density Function (PDF) and Cumulative Distribution Function (CDF) respectively, plotted with unified axes and enlarged fonts for easy comparison across scenes.
+For every profiled model, the script generates:
+1. **Raw Data**: A JSON file containing the raw inference times directly from TensorRT (e.g., `results/csv_files/resnet18_times.json`).
+2. **Engine Files**: Cached TensorRT engine files in `trt_engines/`.
 
 ## pWCET Distribution Extraction (`extract_pwcet.py`)
 
-This standalone utility takes the statistical parameters (loc $\mu$, scale $\sigma$) generated by the profiling workspace (which you can find in the generated plots or `.mat` files) and generates a discrete Probability Mass Function (PMF) formatted for downstream schedulability analysis.
+This standalone utility takes the statistical parameters (loc $\mu$, scale $\sigma$) generated by the profiling workspace (which you can find by running `plot_evt.py` or from `.mat` files) and generates a discrete Probability Mass Function (PMF) formatted for downstream schedulability analysis.
 
 **Example Usage:**
 ```bash
@@ -69,7 +69,7 @@ This generates a text file mapping the upper bounds of the execution time bins t
 We provide standalone tools to evaluate the statistical properties of the execution time traces, per Measurement-Based Probabilistic Timing Analysis (MBPTA) requirements.
 
 ### 1. Kolmogorov-Smirnov (KS) Test (`ks_test.py`)
-Verifies the identical distribution property by randomly selecting blocks of size $m=50$ and $m=100$ elements, and applying a two-sample KS test. 
+Verifies the identical distribution property by randomly selecting two sequential blocks of size $m=50$, and another pair of blocks of size $m=100$ elements, and applying a two-sample KS test on each pair independently. 
 
 **Manual Run:**
 ```bash
@@ -82,6 +82,14 @@ Determines if the Extreme Value Theory (EVT) distribution has stabilized to find
 **Manual Run:**
 ```bash
 python crps_test.py --input "results/csv_files/googlenet_day_foggy_raw.csv" --threshold 0.001
+```
+
+### 3. EVT Distribution Plotting (`plot_evt.py`)
+Reads the CSV files, performs block maxima, fits a Gumbel extreme value distribution, and plots both the empirical and fitted PDF and CDF.
+
+**Manual Run:**
+```bash
+python plot_evt.py --input "results/csv_files/resnet18_day_foggy_raw.csv" --output "results/plots_png/resnet18_day_foggy_evt.png"
 ```
 
 **Automated Loop Testing (Batch Processing Example in PowerShell):**
