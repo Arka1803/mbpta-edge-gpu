@@ -30,19 +30,11 @@ python export_onnx.py --agent all
 echo "ONNX export complete."
 
 # --------------------------------------------------------------------------
-# Step 2: Compile the C profiler
+# Step 2: Profile all models across all scenes (Python)
 # --------------------------------------------------------------------------
 echo ""
-echo "--- Step 2: Compiling C profiler ---"
-make
-echo "Compilation complete."
-
-# --------------------------------------------------------------------------
-# Step 3: Profile all models across all scenes
-# --------------------------------------------------------------------------
-echo ""
-echo "--- Step 3: Profiling all models across all scenes ---"
-./profiler all
+echo "--- Step 2: Profiling all models across all scenes (Python) ---"
+python profiler.py --agent all
 echo "Profiling complete."
 
 # --------------------------------------------------------------------------

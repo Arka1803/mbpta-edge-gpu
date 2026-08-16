@@ -1,10 +1,10 @@
 # DNN GPU Inference Profiler
 
-This tool profiles the inference execution time of various Deep Neural Networks (DNNs) on an edge GPU for Worst-Case Execution Time (WCET) analysis. It uses highly accurate TensorRT profiling via a `trtexec` wrapper written in C, running across all scenes automatically.
+This tool profiles the inference execution time of various Deep Neural Networks (DNNs) on an edge GPU for Worst-Case Execution Time (WCET) analysis. It uses a Python-based profiling pipeline that measures GPU execution time frame-by-frame across your video scenes.
 
 ## Features
-- **Accurate Profiling**: Uses TensorRT's native `trtexec` to capture extremely accurate, iteration-by-iteration inference execution times on the device.
-- **Scene-Aware**: Automatically discovers and runs profiling across every video scene in the `scenes/` folder.
+- **Accurate Profiling**: Uses PyTorch CUDA events to accurately measure GPU inference time.
+- **Scene-Aware**: Automatically discovers and profiles across every video scene in the `scenes/` folder.
 - **ONNX Export**: Provides a utility to export standard PyTorch models to ONNX for ingestion by TensorRT.
 - **Dynamic Model Loading**: Supports standard `torchvision` models seamlessly.
 - **One-Command Pipeline**: A single shell script runs the entire pipeline end-to-end.
@@ -18,8 +18,7 @@ DNN_pWCET/
 └── mbpta-edge-gpu/
     ├── run_pipeline.sh    # One-command end-to-end pipeline runner
     ├── export_onnx.py     # Exports PyTorch models to ONNX
-    ├── profiler.c         # C wrapper for trtexec profiling (scene-aware)
-    ├── Makefile           # Builds the C profiler
+    ├── profiler.py        # Python-based profiler (scene-aware)
     ├── extract_pwcet.py   # Extracts pWCET discrete PMF
     ├── ks_test.py         # Performs the Kolmogorov-Smirnov (KS) Test
     ├── crps_test.py       # Computes Continuous Ranked Probability Score (CRPS)
@@ -38,9 +37,8 @@ chmod +x run_pipeline.sh
 ```
 This single command will:
 1. Export all models to ONNX (into `../DNN_models/`)
-2. Compile the C profiler
-3. Profile every model against every scene in `../scenes/`
-4. Run the KS test on all output CSVs
+2. Profile every model against every scene in `../scenes/` (Python)
+3. Run the KS test on all output CSVs
 5. Run the CRPS convergence test on all output CSVs
 6. Generate and save EVT PDF/CDF plots for all output CSVs
 
@@ -59,21 +57,16 @@ python export_onnx.py --agent all
 Supported models: `lenet5`, `alexnet`, `vgg16`, `googlenet`, `resnet18`, `resnet50`.
 ONNX files are stored alongside the pre-trained model cache in `../DNN_models/`.
 
-### 2. Compile the C Profiler
-```bash
-make
-```
-
-### 3. Profile the Model(s)
-The profiler automatically scans `../scenes/` for all `.mp4` and `.avi` files and
-runs TensorRT inference for each model–scene pair. No iteration count is needed.
+### 2. Profile the Model(s)
+The Python profiler automatically scans `../scenes/` for all `.mp4` and `.avi` files and
+runs inference frame-by-frame for each model–scene pair.
 
 ```bash
 # Profile a single model across all scenes
-./profiler resnet18
+python profiler.py --agent resnet18
 
 # Profile all models across all scenes
-./profiler all
+python profiler.py --agent all
 ```
 Output files are saved as `results/csv_files/<model>_<scene>_raw.csv`.
 
@@ -82,9 +75,9 @@ Output files are saved as `results/csv_files/<model>_<scene>_raw.csv`.
 ## Outputs
 
 For each model–scene pair the pipeline generates:
-1. **Raw Timing Data**: `results/csv_files/<model>_<scene>_raw.csv` — per-inference latency in ms.
-2. **Engine Files**: Cached TensorRT engine files in `trt_engines/`.
-3. **EVT Plots**: PDF and CDF plots in `results/plots_png/<model>_<scene>_evt.png`.
+1. **Raw Timing Data**: `results/csv_files/<model>_<scene>_raw.csv` — per-frame latency in ms.
+2. **MAT Files**: Raw times, maxima, and Gumbel parameters in `results/mat_files/`.
+3. **EVT Plots**: PDF and CDF plots in `results/plots_png/`.
 
 ---
 
