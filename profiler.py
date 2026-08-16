@@ -159,9 +159,11 @@ def profile_video(video_path: str, model: nn.Module, device: torch.device, trans
         
     inference_times = []
     
-    # Pre-allocate CUDA events for accurate timing
-    start_event = torch.cuda.Event(enable_timing=True)
-    end_event = torch.cuda.Event(enable_timing=True)
+    # Pre-allocate CUDA events if using GPU
+    use_cuda = device.type == 'cuda'
+    if use_cuda:
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
 
     while True:
         ret, frame = cap.read()
@@ -176,24 +178,19 @@ def profile_video(video_path: str, model: nn.Module, device: torch.device, trans
         input_tensor = transform(pil_img)
         input_batch = input_tensor.unsqueeze(0).to(device)
         
-        # GPU Warm-up (optional but good practice) 
-        # For strict frame-by-frame, we just measure what happens directly
-        
-        # 1. Record start time
-        start_event.record()
-        
-        # 2. Execute inference
-        with torch.no_grad():
-            _ = model(input_batch)
+        if use_cuda:
+            start_event.record()
+            with torch.no_grad():
+                _ = model(input_batch)
+            end_event.record()
+            torch.cuda.synchronize()
+            elapsed_time_ms = start_event.elapsed_time(end_event)
+        else:
+            t0 = time.perf_counter()
+            with torch.no_grad():
+                _ = model(input_batch)
+            elapsed_time_ms = (time.perf_counter() - t0) * 1000.0
             
-        # 3. Record end time
-        end_event.record()
-        
-        # 4. Synchronize GPU to capture true completion time
-        torch.cuda.synchronize()
-        
-        # 5. Calculate elapsed time in milliseconds
-        elapsed_time_ms = start_event.elapsed_time(end_event)
         inference_times.append(elapsed_time_ms)
         
     cap.release()
